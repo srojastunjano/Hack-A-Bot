@@ -3,13 +3,16 @@ import tkinter as tk
 from tkinter import messagebox
 import os
 from datetime import datetime
+from picamera2 import Picamera2
+from picamera2.encoders import JpegEncoder
+from picamera2.outputs import FileOutput
 import time
 
 class CameraApp:
     def __init__(self):
         # Create main window
         self.root = tk.Tk()
-        self.root.title("Raspberry Pi Camera Capture")
+        self.root.title("Raspberry Pi AI Camera Capture")
         self.root.geometry("800x600")
         
         # Create capture button
@@ -39,40 +42,48 @@ class CameraApp:
             os.makedirs(self.save_dir)
         
         # Initialize camera
-        self.cap = cv2.VideoCapture(0)  # Use 0 for default camera
-        
-        # Check if camera opened successfully
-        if not self.cap.isOpened():
-            messagebox.showerror("Error", "Could not open camera!")
+        try:
+            self.picam2 = Picamera2()
+            
+            # Configure camera
+            camera_config = self.picam2.create_preview_configuration(
+                main={"size": (640, 480)},
+                lores={"size": (320, 240)},
+                display="lores"
+            )
+            self.picam2.configure(camera_config)
+            self.picam2.start()
+            
+            # Start video preview
+            self.update_preview()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not initialize camera: {str(e)}")
             self.root.quit()
             return
-        
-        # Start video preview
-        self.update_preview()
-        
+    
     def capture_image(self):
         """Capture and save image from camera"""
-        ret, frame = self.cap.read()
-        if ret:
+        try:
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(self.save_dir, f"image_{timestamp}.jpg")
             
-            # Save image
-            cv2.imwrite(filename, frame)
+            # Capture image
+            self.picam2.capture_file(filename, use_video_port=True)
             
             # Update status
             self.status_label.config(text=f"Image saved: {filename}")
             messagebox.showinfo("Success", "Image captured and saved successfully!")
-        else:
-            messagebox.showerror("Error", "Failed to capture image!")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to capture image: {str(e)}")
     
     def update_preview(self):
         """Update the video preview"""
-        ret, frame = self.cap.read()
-        if ret:
-            # Resize frame to fit window
-            frame = cv2.resize(frame, (640, 480))
+        try:
+            # Capture frame for preview
+            frame = self.picam2.capture_array("lores")
             
             # Convert frame to PhotoImage
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -87,6 +98,9 @@ class CameraApp:
             
             # Keep reference to prevent garbage collection
             self.preview_label.image = frame_tk
+            
+        except Exception as e:
+            print(f"Preview error: {str(e)}")
         
         # Schedule next update
         self.root.after(10, self.update_preview)
@@ -97,8 +111,8 @@ class CameraApp:
     
     def __del__(self):
         """Cleanup when application closes"""
-        if hasattr(self, 'cap'):
-            self.cap.release()
+        if hasattr(self, 'picam2'):
+            self.picam2.stop()
 
 if __name__ == "__main__":
     app = CameraApp()
