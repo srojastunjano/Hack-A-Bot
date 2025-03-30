@@ -3,30 +3,26 @@ from model_compression_toolkit.core import QuantizationErrorMethod
 from dataSetGenerator import representative_dataset_gen
 from typing import Generator
 from tensorflow.keras.models import load_model
+import tensorflow as tf
 
 
 train_dir = 'processed_Train'
-MODEL_PATH = "models/"  
+MODEL_PATH = "model_1/"  
 float_model = load_model(MODEL_PATH)
 n_iter=10
 
 # Create representative dataset generator
-def get_representative_dataset() -> Generator:
-    """A function that loads the dataset and returns a representative dataset generator.
+def get_representative_dataset():
+    dataset = tf.keras.utils.image_dataset_from_directory(
+        directory='processed_Train',
+        labels=None,
+        image_size=(224, 224),  # Use your model's input size
+        batch_size=1
+    ).map(lambda x: x / 255.0)  # Normalize if needed
 
-    Returns:
-        Generator: A generator yielding batches of preprocessed images.
-    """
-    dataset = train_dir
-
-    def representative_dataset() -> Generator:
-        """A generator function that yields batch of preprocessed images.
-
-        Yields:
-            A batch of preprocessed images.
-        """
-        for _ in range(n_iter):
-            yield dataset.take(1).get_single_element()[0].numpy()
+    def representative_dataset():
+        for input_value in dataset.take(10):  # or whatever n_iter you want
+            yield [input_value.numpy()]  # Must return a list or tuple of numpy arrays
 
     return representative_dataset
 
@@ -57,4 +53,10 @@ quantized_model, quantization_info = mct.ptq.keras_post_training_quantization(
 
 # Export the quantized model
 mct.exporter.keras_export_model(model=quantized_model, save_model_path=MODEL_PATH)
+
+converter = tf.lite.TFLiteConverter.from_saved_model("models/")
+tflite_model = converter.convert()
+
+with open("model_quantized.tflite", "wb") as f:
+    f.write(tflite_model)
 
